@@ -8,6 +8,17 @@ Yêu cầu:
     - Output: danh sách chunks có score, sorted descending
     - Phải tương thích với embedding model và vector store ở Task 4
 """
+import json
+import os
+from pathlib import Path
+from typing import List
+
+import numpy as np
+
+try:
+    from sentence_transformers import SentenceTransformer
+except Exception:
+    SentenceTransformer = None
 
 
 def semantic_search(query: str, top_k: int = 10) -> list[dict]:
@@ -26,37 +37,53 @@ def semantic_search(query: str, top_k: int = 10) -> list[dict]:
         }
         Sorted by score descending.
     """
-    # TODO: Implement semantic search
-    #
-    # Bước 1: Embed query bằng cùng model ở Task 4
-    # Bước 2: Query vector store (cosine similarity)
-    # Bước 3: Return top_k results
-    #
-    # Ví dụ với Weaviate:
-    # import weaviate
-    # from sentence_transformers import SentenceTransformer
-    #
-    # model = SentenceTransformer("BAAI/bge-m3")
-    # query_embedding = model.encode(query).tolist()
-    #
-    # client = weaviate.connect_to_local()
-    # collection = client.collections.get("DrugLawDocs")
-    #
-    # results = collection.query.near_vector(
-    #     near_vector=query_embedding,
-    #     limit=top_k,
-    #     return_metadata=MetadataQuery(distance=True)
-    # )
-    #
-    # return [
-    #     {
-    #         "content": obj.properties["content"],
-    #         "score": 1 - obj.metadata.distance,  # distance → similarity
-    #         "metadata": {"source": obj.properties["source"], ...}
-    #     }
-    #     for obj in results.objects
-    # ]
-    raise NotImplementedError("Implement semantic_search")
+
+    index_path = Path(__file__).parent.parent / "data" / \
+        "index" / "chunks_with_embeddings.json"
+    if not index_path.exists():
+        raise FileNotFoundError(
+            f"Local index not found: {index_path}. Run Task 4 first.")
+
+    with index_path.open("r", encoding="utf-8") as fh:
+        chunks = json.load(fh)
+
+    if SentenceTransformer is None:
+        raise RuntimeError(
+            "Please install 'sentence-transformers' in your venv: pip install sentence-transformers")
+
+    hf_token = os.environ.get("HF_TOKEN") or os.environ.get(
+        "HUGGINGFACE_HUB_TOKEN")
+    preferred = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-m3")
+
+    if ("/" in preferred or preferred.startswith("BAAI") or preferred.startswith("bge-")) and not hf_token:
+        model_name = "sentence-transformers/all-MiniLM-L6-v2"
+    else:
+        model_name = preferred
+
+    try:
+        model = SentenceTransformer(model_name)
+    except Exception:
+        model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+
+    q_emb = model.encode(query)
+    q_vec = np.array(q_emb, dtype=float)
+
+    results: List[dict] = []
+    for c in chunks:
+        emb = c.get("embedding")
+        if emb is None:
+            continue
+        vec = np.array(emb, dtype=float)
+        denom = (np.linalg.norm(q_vec) * np.linalg.norm(vec))
+        score = float(np.dot(q_vec, vec) / denom) if denom != 0 else 0.0
+        results.append({
+            "content": c.get("content"),
+            "score": score,
+            "metadata": c.get("metadata", {}),
+        })
+
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results[:top_k]
 
 
 if __name__ == "__main__":
