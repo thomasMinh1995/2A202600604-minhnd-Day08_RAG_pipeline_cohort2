@@ -5,14 +5,15 @@ requests>=2.31.0
 # Task 2 - Crawling
 crawl4ai>=0.3.0
 
-# Task 3 - Document conversion
-markitdown>=0.1.0
+# Task 3 - Document conversion (include PDF dependencies)
+# 'pdf' extra installs optional deps needed to convert PDF files
+markitdown[all]>=0.1.0
 
 # Task 4 - Chunking & Indexing
 langchain-text-splitters>=0.2.0
 sentence-transformers>=2.2.0
 weaviate-client>=4.5.0
-# chromadb>=0.4.0        # Alternative
+chromadb>=0.4.0        # Alternative
 # faiss-cpu>=1.7.4       # Alternative
 
 # Task 6 - BM25
